@@ -232,25 +232,27 @@
       render();
     });
     var form = document.getElementById("auth-form");
-    form.addEventListener("submit", function (e) {
-      e.preventDefault();
-      var email = document.getElementById("in-email").value.trim();
-      var pass = document.getElementById("in-pass").value;
-      if (!email || pass.length < 6) { flash("عبّي الإيميل وكلمة سر 6 أحرف على الأقل"); return; }
+    if (form) {
+      form.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var email = document.getElementById("in-email").value.trim();
+        var pass = document.getElementById("in-pass").value;
+        if (!email || pass.length < 6) { flash("عبّي الإيميل وكلمة سر 6 أحرف على الأقل"); return; }
 
-      if (state.mode === "signup") {
-        var roblox = document.getElementById("in-roblox").value.trim();
-        var discord = document.getElementById("in-discord").value.trim();
-        if (!roblox || !discord) { flash("عبّي اسمي روبلوكس وديسكورد"); return; }
-        firebase.auth().createUserWithEmailAndPassword(email, pass).then(function (cred) {
-          return firebase.firestore().collection("users").doc(cred.user.uid).set({
-            email: email, roblox: roblox, discord: discord, displayName: ""
-          });
-        }).catch(function (err) { flash(err.message); });
-      } else {
-        firebase.auth().signInWithEmailAndPassword(email, pass).catch(function (err) { flash(err.message); });
-      }
-    });
+        if (state.mode === "signup") {
+          var roblox = document.getElementById("in-roblox").value.trim();
+          var discord = document.getElementById("in-discord").value.trim();
+          if (!roblox || !discord) { flash("عبّي اسمي روبلوكس وديسكورد"); return; }
+          firebase.auth().createUserWithEmailAndPassword(email, pass).then(function (cred) {
+            return firebase.firestore().collection("users").doc(cred.user.uid).set({
+              email: email, roblox: roblox, discord: discord, displayName: ""
+            });
+          }).catch(function (err) { flash(err.message); });
+        } else {
+          firebase.auth().signInWithEmailAndPassword(email, pass).catch(function (err) { flash(err.message); });
+        }
+      });
+    }
   }
 
   // ---------------- main app ----------------
@@ -323,289 +325,176 @@
         if (m) html += '<div class="medal-label" style="color:' + m.ring + ';">' + m.label + "</div>";
         html += "</div>";
         html += '<div class="row-val"><div class="num">' + val + '</div><div class="unit">' + unit + "</div></div>";
-        if (state.isisAdmin) {
-      html += '<div class="uid-box"><b>أنت مدير الموقع ✓</b><br/>UID: ' + esc(state.user.uid) + "</div>";
-    } else if (OWNER_UID.indexOf("PASTE_") !== -1) {
-      html += '<div class="uid-box"><b>خطوة الإعداد الأخيرة:</b><br/>انسخ الكود تحت وحطه في متغير OWNER_UID أعلى الملف حتى تصير أنت مدير الموقع:<br/><b>' + esc(state.user.uid) + "</b></div>";
-    }
-
-    html += '<div class="wrap">';
-    html += '<div class="center" style="padding-top:8px;padding-bottom:18px;">';
-    html += '<div class="eyebrow en">TOPZEN CLAN COMMUNITY <span class="dot"></span></div>';
-    html += '<h1>توب <span class="glow en">ZEN</span></h1>';
-    html += '<p class="sub">تابع أفضل اللاعبين، القتلات، والترتيب العام لأعضاء الكلان</p>';
-    html += "</div>";
-
-    if (locked) {
-      html += '<div class="card gate">';
-      html += "<p>حسابك مرتبط ✓ Roblox: <b style=\"color:#fff\">" + esc(state.user.roblox) + "</b> — Discord: <b style=\"color:#fff\">" + esc(state.user.discord) + "</b><br/><span style=\"color:#c4b5fd\">خطوة أخيرة قبل ما تقدر تتفاعل مع الموقع:</span></p>";
-      html += '<form id="name-form" class="gate-form"><input id="in-name" placeholder="اكتب اسمك" autocomplete="off"/><button type="submit">حفظ</button></form></div>';
-    }
-
-    html += '<div class="' + (locked ? "locked" : "") + '">';
-    html += '<div class="leader"><div class="eyebrow en" style="justify-content:center;">LEADER OF THE CLAN</div>';
-    html += '<div class="leader-name">' + avatarHTML(state.site.clanLeader, 34) + esc(state.site.clanLeader) + "</div></div>";
-
-    html += '<div class="tabs">';
-    html += '<button class="tab-btn ' + (state.tab === "kills" ? "active" : "") + '" data-tab="kills">🗡️ توب كيل</button>';
-    html += '<button class="tab-btn ' + (state.tab === "clan" ? "active" : "") + '" data-tab="clan">🏆 ليدربورد الكلان</button>';
-    html += "</div>";
-
-    var list = state.tab === "kills" ? state.site.kills : state.site.clan;
-    html += '<div class="list">';
-    if (!list || list.length === 0) {
-      html += '<div class="empty">لا توجد بيانات بعد</div>';
-    } else {
-      list.forEach(function (item, i) {
-        var m = MEDALS[i];
-        var val = state.tab === "kills" ? item.kills : item.points;
-        var unit = state.tab === "kills" ? "قتلة" : "نقطة";
-        var mine = state.user.displayName && item.name === state.user.displayName;
-        var rowStyle = m ? ("box-shadow:0 0 20px " + m.glow + ";border-color:" + m.ring + ";") : "";
-        html += '<div class="row" style="' + rowStyle + '">';
-        html += rankHTML(i) + avatarHTML(item.name, 44);
-        html += '<div class="row-info"><div class="row-name">' + esc(item.name);
-        if (mine) html += '<span class="you-badge">أنت</span>';
-        html += "</div>";
-        if (m) html += '<div class="medal-label" style="color:' + m.ring + ';">' + m.label + "</div>";
-        html += "</div>";
-        html += '<div class="row-val"><div class="num">' + val + '</div><div class="unit">' + unit + "</div></div>";
-        if (state.isAdmin) html += '<button class="row-del" data-del="' + item.id + '" data-kind="' + state.tab + '">✕</button>';
-        html += "</div>";
-      });
-    }
-    html += "</div></div>";
-
-    if (state.isAdmin) {
-      html += '<div class="admin-panel"><div class="admin-title">لوحة تحكم المدير</div>';
-      html += '<div class="stack">';
-      html += '<div class="row-btns"><input id="adm-leader" placeholder="اسم قائد الكلان" value="' + esc(state.site.clanLeader) + '"/><button id="btn-set-leader">حفظ القائد</button></div>';
-      html += '<div class="row-btns"><input id="adm-k-name" placeholder="الاسم"/><input id="adm-k-val" type="number" placeholder="القتلات"/><button id="btn-add-kill">إضافة لقتلات</button></div>';
-      html += '<div class="row-btns"><input id="adm-c-name" placeholder="الاسم"/><input id="adm-c-val" type="number" placeholder="النقاط"/><button id="btn-add-clan">إضافة للكلان</button></div>';
-      html += "</div></div>";
-    }
-
-    html += "</div>";
-    return html;
-  }
-
-  function bindMain() {
-    var logoutBtn = document.getElementById("logout-btn");
-    if (logoutBtn) logoutBtn.addEventListener("click", function () { firebase.auth().signOut(); });
-
-    var nameForm = document.getElementById("name-form");
-    if (nameForm) {
-      nameForm.addEventListener("submit", function (e) {
-        e.preventDefault();
-        var val = document.getElementById("in-name").value.trim();
-        if (!val) return;
-        firebase.firestore().collection("users").doc(state.user.uid).update({ displayName: val }).then(function () {
-          state.user.displayName = val;
-          render();
-        }).catch(function (err) { flash(err.message); });
-      });
-    }
-
-    var tabs = document.querySelectorAll(".tab-btn");
-    tabs.forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        state.tab = btn.getAttribute("data-tab");
-        render();
-      });
-    });
-
-    var memToggle = document.getElementById("members-toggle");
-    var memClose = document.getElementById("members-close");
-    var memOverlay = document.getElementById("members-overlay");
-    if (memToggle) memToggle.addEventListener("click", function () { state.showMembers = true; render(); });
-    if (memClose) memClose.addEventListener("click", function () { state.showMembers = false; render(); });
-    if (memOverlay) memOverlay.addEventListener("click", function () { state.showMembers = false; render(); });
-
-    if (!state.isAdmin) return;
-
-    var btnLeader = document.getElementById("btn-set-leader");
-    if (btnLeader) {
-      btnLeader.addEventListener("click", function () {
-        var v = document.getElementById("adm-leader").value.trim();
-        if (!v) return;
-        firebase.firestore().collection("site").doc("main").set({ clanLeader: v }, { merge: true }).then(function () {
-          flash("تم تحديث اسم القائد");
-        });
-      });
-    }
-
-    var btnKill = document.getElementById("btn-add-kill");
-    if (btnKill) {
-      btnKill.addEventListener("click", function () {
-        var n = document.getElementById("adm-k-name").value.trim();
-        var k = parseInt(document.getElementById("adm-k-val").value, 10);
-        if (!n || isNaN(k)) return;
-        firebase.firestore().collection("kills").add({ name: n, kills: k, createdAt: Date.now() }).then(function () {
-          flash("تمت الإضافة القتلات");
-        });
-      });
-    }
-
-    var btnClan = document.getElementById("btn-add-clan");
-    if (btnClan) {
-      btnClan.addEventListener("click", function () {
-        var n = document.getElementById("adm-c-name").value.trim();
-        var p = parseInt(document.getElementById("adm-c-val").value, 10);
-        if (!n || isNaN(p)) return;
-        firebase.firestore().collection("clan").add({ name: n, points: p, createdAt: Date.now() }).then(function () {
-          flash("تمت الإضافة للكلان");
-        });
-      });
-    }
-
-    var dels = document.querySelectorAll("[data-del]");
-    dels.forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        var id = btn.getAttribute("data-del");
-        var kind = btn.getAttribute("data-kind");
-        firebase.firestore().collection(kind).doc(id).delete().then(function () {
-          flash("تم الحذف");
-        });
-      });
-    });
-  }
-
-  function render() {
-    var html = "";
-    if (!configReady) {
-      html = configMissingHTML();
-    } else if (state.booting) {
-      html = '<div class="login-page"><div class="eyebrow en"><span class="dot"></span> LOADING...</div></div>';
-    } else if (!state.user) {
-      html = authHTML();
-    } else {
-      html = mainHTML();
-    }
-
-    if (state.toast) {
-      html += '<div class="toast">' + esc(state.toast) + "</div>";
-    }
-
-    root.innerHTML = html;
-
-    if (!configReady || state.booting) return;
-    if (!state.user) bindAuth();
-    else bindMain();
-  }
-
-  render();
-
-  if (!configReady) return;
-
-  firebase.auth().onAuthStateChanged(function (u) {
-    if (!u) {
-      state.user = null;
-      state.isAdmin = false;
-      state.booting = false;
-      render();
-      return;
-    }
-
-    var isOwner = (u.uid === OWNER_UID);
-    state.isAdmin = isOwner;
-
-    firebase.firestore().collection("users").doc(u.uid).get().then(function (doc) {
-      var data = doc.data() || {};
-      state.user = {
-        uid: u.uid,
-        email: u.email,
-        roblox: data.roblox || "",
-        discord: data.discord || "",
-        displayName: data.displayName || ""
-      };
-      state.booting = false;
-      render();
-
-      listenData();
-      if (isOwner) listenMembers();
-    }).catch(function (err) {
-      console.error(err);
-      state.user = { uid: u.uid, email: u.email, roblox: "", discord: "", displayName: "" };
-      state.booting = false;
-      render();
-    });
-  });
-
-  function listenData() {
-    firebase.firestore().collection("site").doc("main").onSnapshot(function (doc) {
-      if (doc.exists) {
-        state.site.clanLeader = doc.data().clanLeader || "ZenHQ";
-        render();
-      }
-    });
-
-    firebase.firestore().collection("kills").onSnapshot(function (snap) {
-      var arr = [];
-      snap.forEach(function (d) { arr.push(Object.assign({ id: d.id }, d.data())); });
-      arr.sort(function (a, b) { return (b.kills || 0) - (a.kills || 0); });
-      state.site.kills = arr;
-      render();
-    });
-
-    firebase.firestore().collection("clan").onSnapshot(function (snap) {
-      var arr = [];
-      snap.forEach(function (d) { arr.push(Object.assign({ id: d.id }, d.data())); });
-      arr.sort(function (a, b) { return (b.points || 0) - (a.points || 0); });
-      state.site.clan = arr;
-      render();
-    });
-  }
-
-  function listenMembers() {
-    firebase.firestore().collection("users").onSnapshot(function (snap) {
-      var arr = [];
-      snap.forEach(function (d) { arr.push(Object.assign({ id: d.id }, d.data())); });
-      state.members = arr;
-      render();
-    });
-  }
-
+if (state.isAdmin) html += '<button class="row-del" data-del="' + item.id + '" data-kind="' + state.tab + '">✕</button>';
+html += "</div>";
+});
+}
+html += "</div></div>";
+if (state.isAdmin) {
+html += '<div class="admin-panel"><div class="admin-title">لوحة تحكم المدير</div>';
+html += '<div class="stack">';
+html += '<div class="row-btns"><input id="adm-leader" placeholder="اسم قائد الكلان" value="' + esc(state.site.clanLeader) + '"/><button id="btn-set-leader">حفظ القائد</button></div>';
+html += '<div class="row-btns"><input id="adm-k-name" placeholder="الاسم"/><input id="adm-k-val" type="number" placeholder="القتلات"/><button id="btn-add-kill">إضافة لقتلات</button></div>';
+html += '<div class="row-btns"><input id="adm-c-name" placeholder="الاسم"/><input id="adm-c-val" type="number" placeholder="النقاط"/><button id="btn-add-clan">إضافة للكلان</button></div>';
+html += "</div></div>";
+}
+html += "</div>";
+return html;
+}
+function bindMain() {
+var logoutBtn = document.getElementById("logout-btn");
+if (logoutBtn) logoutBtn.addEventListener("click", function () { firebase.auth().signOut(); });
+var nameForm = document.getElementById("name-form");
+if (nameForm) {
+nameForm.addEventListener("submit", function (e) {
+e.preventDefault();
+var val = document.getElementById("in-name").value.trim();
+if (!val) return;
+firebase.firestore().collection("users").doc(state.user.uid).update({ displayName: val }).then(function () {
+state.user.displayName = val;
+render();
+}).catch(function (err) { flash(err.message); });
+});
+}
+var tabs = document.querySelectorAll(".tab-btn");
+tabs.forEach(function (btn) {
+btn.addEventListener("click", function () {
+state.tab = btn.getAttribute("data-tab");
+render();
+});
+});
+var memToggle = document.getElementById("members-toggle");
+var memClose = document.getElementById("members-close");
+var memOverlay = document.getElementById("members-overlay");
+if (memToggle) memToggle.addEventListener("click", function () { state.showMembers = true; render(); });
+if (memClose) memClose.addEventListener("click", function () { state.showMembers = false; render(); });
+if (memOverlay) memOverlay.addEventListener("click", function () { state.showMembers = false; render(); });
+if (!state.isAdmin) return;
+var btnLeader = document.getElementById("btn-set-leader");
+if (btnLeader) {
+btnLeader.addEventListener("click", function () {
+var v = document.getElementById("adm-leader").value.trim();
+if (!v) return;
+firebase.firestore().collection("site").doc("main").set({ clanLeader: v }, { merge: true }).then(function () {
+flash("تم تحديث اسم القائد");
+});
+});
+}
+var btnKill = document.getElementById("btn-add-kill");
+if (btnKill) {
+btnKill.addEventListener("click", function () {
+var n = document.getElementById("adm-k-name").value.trim();
+var k = parseInt(document.getElementById("adm-k-val").value, 10);
+if (!n || isNaN(k)) return;
+firebase.firestore().collection("kills").add({ name: n, kills: k, createdAt: Date.now() }).then(function () {
+flash("تمت الإضافة للقتلات");
+});
+});
+}
+var btnClan = document.getElementById("btn-add-clan");
+if (btnClan) {
+btnClan.addEventListener("click", function () {
+var n = document.getElementById("adm-c-name").value.trim();
+var p = parseInt(document.getElementById("adm-c-val").value, 10);
+if (!n || isNaN(p)) return;
+firebase.firestore().collection("clan").add({ name: n, points: p, createdAt: Date.now() }).then(function () {
+flash("تمت الإضافة للكلان");
+});
+});
+}
+var dels = document.querySelectorAll("[data-del]");
+dels.forEach(function (btn) {
+btn.addEventListener("click", function () {
+var id = btn.getAttribute("data-del");
+var kind = btn.getAttribute("data-kind");
+firebase.firestore().collection(kind).doc(id).delete().then(function () {
+flash("تم الحذف");
+});
+});
+});
+}
+function render() {
+var html = "";
+if (!configReady) {
+html = configMissingHTML();
+} else if (state.booting) {
+html = '<div class="login-page"><div class="eyebrow en"><span class="dot"></span> LOADING...</div></div>';
+} else if (!state.user) {
+html = authHTML();
+} else {
+html = mainHTML();
+}
+if (state.toast) {
+html += '<div class="toast">' + esc(state.toast) + "</div>";
+}
+root.innerHTML = html;
+if (!configReady || state.booting) return;
+if (!state.user) bindAuth();
+else bindMain();
+}
+render();
+if (!configReady) return;
+firebase.auth().onAuthStateChanged(function (u) {
+if (!u) {
+state.user = null;
+state.isAdmin = false;
+state.booting = false;
+render();
+return;
+}
+var isOwner = (u.uid === OWNER_UID);
+state.isAdmin = isOwner;
+firebase.firestore().collection("users").doc(u.uid).get().then(function (doc) {
+var data = doc.data() || {};
+state.user = {
+uid: u.uid,
+email: u.email,
+roblox: data.roblox || "",
+discord: data.discord || "",
+displayName: data.displayName || ""
+};
+state.booting = false;
+render();
+listenData();
+if (isOwner) listenMembers();
+}).catch(function (err) {
+console.error(err);
+state.user = { uid: u.uid, email: u.email, roblox: "", discord: "", displayName: "" };
+state.booting = false;
+render();
+});
+});
+function listenData() {
+firebase.firestore().collection("site").doc("main").onSnapshot(function (doc) {
+if (doc.exists) {
+state.site.clanLeader = doc.data().clanLeader || "ZenHQ";
+render();
+}
+});
+firebase.firestore().collection("kills").onSnapshot(function (snap) {
+var arr = [];
+snap.forEach(function (d) { arr.push(Object.assign({ id: d.id }, d.data())); });
+arr.sort(function (a, b) { return (b.kills || 0) - (a.kills || 0); });
+state.site.kills = arr;
+render();
+});
+firebase.firestore().collection("clan").onSnapshot(function (snap) {
+var arr = [];
+snap.forEach(function (d) { arr.push(Object.assign({ id: d.id }, d.data())); });
+arr.sort(function (a, b) { return (b.points || 0) - (a.points || 0); });
+state.site.clan = arr;
+render();
+});
+}
+function listenMembers() {
+firebase.firestore().collection("users").onSnapshot(function (snap) {
+var arr = [];
+snap.forEach(function (d) { arr.push(Object.assign({ id: d.id }, d.data())); });
+state.members = arr;
+render();
+});
+}
 })();
 </script>
-
-<!--
-================================================================
-قواعد FIRESTORE DATABASE RULES (انسخها والصقها في كونسول الفايربيس):
-================================================================
-
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    
-    function isSignedIn() {
-      return request.auth != null;
-    }
-    
-    function isOwner() {
-      return isSignedIn() && request.auth.uid == "PASTE_YOUR_UID_HERE_AFTER_FIRST_SIGNUP";
-    }
-
-    match /users/{userId} {
-      allow read: if isSignedIn();
-      allow create, update: if isSignedIn() && request.auth.uid == userId;
-    }
-
-    match /site/{doc} {
-      allow read: if true;
-      allow write: if isOwner();
-    }
-
-    match /kills/{doc} {
-      allow read: if true;
-      allow write: if isOwner();
-    }
-
-    match /clan/{doc} {
-      allow read: if true;
-      allow write: if isOwner();
-    }
-  }
-}
--->
 </body>
 </html>
