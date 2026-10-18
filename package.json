@@ -1,14 +1,12 @@
 {
-  "name": "topzen-backend",
-  "version": "1.0.0",
+  "name": "functions",
   "private": true,
-  "main": "server.js",
-  "scripts": { "start": "node server.js" },
-  "engines": { "node": ">=18" },
+  "main": "index.js",
+  "engines": { "node": "20" },
   "dependencies": {
     "@napi-rs/canvas": "^0.1.53",
-    "discord.js": "^14.16.0",
     "express": "^4.19.2",
-    "firebase-admin": "^12.5.0"
+    "firebase-admin": "^12.5.0",
+    "firebase-functions": "^5.1.1"
   }
 }
