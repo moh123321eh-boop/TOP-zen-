@@ -131,13 +131,13 @@
   var configReady = firebaseConfig.apiKey.indexOf("PASTE_") === -1;
   var root = document.getElementById("root");
   var db = null, unsubUser = null, unsubMembers = null, toastTimer = null;
-  var unsubSite = null, siteKey = "", unsubProfiles = null, AVATARS = {};
+  var unsubSite = null, siteKey = "", unsubProfiles = null, AVATARS = {}, allServers = [], unsubAll = null, unsubCh = null;
 
   var state = {
     booting: true, user: null, isAdmin: false, isOwner: false,
     site: { clanLeader: "ZenHQ", kills: [], clan: [], admins: [], commands: [], guildId: "" },
     tab: "kills", mode: "signup", toast: "",
-    showMembers: false, showMod: false, members: []
+    showMembers: false, showMod: false, members: [], selected: null, challenges: []
   };
 
   function esc(str) {
@@ -200,7 +200,7 @@
     on("discord-login", function () { window.location.href = BACKEND_URL + "/auth/discord"; });
   }
 
-  function listHTML(kind) {
+   function listHTML(kind) {
     var isK = kind === "kills";
     var items = (isK ? state.site.kills : state.site.clan).slice().sort(function (a, b) {
       return isK ? b.kills - a.kills : b.points - a.points;
@@ -209,9 +209,10 @@
     var h = '<div class="list">';
     items.forEach(function (it, i) {
       var m = MEDALS[i];
-      h += '<div class="row">' + rankHTML(i) + avatarHTML(it.name, 40);
+      h += '<div class="row" data-pick="' + kind + ':' + esc(it.id) + '" style="cursor:pointer;">' + rankHTML(i) + avatarHTML(it.name, 40);
       h += '<div class="row-info"><div class="row-name">' + esc(it.name);
       if (state.user.displayName && it.name === state.user.displayName) h += '<span class="you-badge">You</span>';
+      if (protLeft(kind, it.id)) h += '<span class="you-badge" style="background:rgba(251,191,36,0.2);color:#fbbf24;">🛡 ' + fmt(protLeft(kind, it.id)) + '</span>';
       h += "</div>";
       if (m) h += '<div class="medal-label" style="color:' + m.ring + ';">' + m.label + "</div>";
       h += '</div><div class="row-val"><div class="num">' + (isK ? it.kills : it.points) + '</div><div class="unit en">' + (isK ? "KILLS" : "PTS") + "</div></div>";
@@ -221,9 +222,78 @@
     return h + "</div>";
   }
 
+  function sortedList(kind) {
+    var f = kind === "kills" ? "kills" : "points";
+    return (kind === "kills" ? state.site.kills : state.site.clan).slice().sort(function (a, b) { return b[f] - a[f]; });
+  }
+  function protLeft(kind, id) {
+    var t = (state.site.protections || {})[kind + ":" + id];
+    return t && t > Date.now() ? t - Date.now() : 0;
+  }
+  function fmt(ms) { var m = Math.ceil(ms / 60000); return Math.floor(m / 60) + "h " + (m % 60) + "m"; }
+  function challengeCheck(kind, entry) {
+    var u = state.user, names = [];
+    if (u.discord) names.push(u.discord.toLowerCase());
+    if (u.robloxVerified && u.roblox) names.push(u.roblox.toLowerCase());
+    if (!names.length) return { ok: false, msg: "Sign in with Discord to challenge players." };
+    var list = sortedList(kind), my = -1, t = -1;
+    list.forEach(function (e, i) {
+      if (my === -1 && names.indexOf(String(e.name).toLowerCase()) !== -1) my = i;
+      if (String(e.id) === String(entry.id)) t = i;
+    });
+    if (t === my) return { ok: false, msg: "That is you." };
+    if ((state.challenges || []).some(function (c) { return c.fromUid === u.uid; })) return { ok: false, msg: "You already have a pending 1v1." };
+    var n = Math.min(list.length, 10);
+    if (my !== -1 && my < 10) {
+      if (t < my && my - t <= 2) return { ok: true };
+      return { ok: false, msg: "You can only challenge players up to 2 ranks above you." };
+    }
+    if (t >= Math.max(0, n - 2) && t < n) return { ok: true };
+    return { ok: false, msg: "Players outside the Top 10 can only challenge ranks 9 and 10." };
+  }
+  function challengePanelHTML() {
+    var h = "", kind = state.tab, sel = null;
+    if (state.selected && state.selected.kind === kind) {
+      sel = sortedList(kind).filter(function (e) { return String(e.id) === state.selected.id; })[0] || null;
+    }
+    if (sel) {
+      h += '<div class="card stack" style="margin-top:12px;"><div style="font-size:14px;font-weight:800;color:#a7f3d0;">1v1 vs ' + esc(sel.name) + "</div>";
+      var left = protLeft(kind, sel.id);
+      if (left) h += '<div style="font-size:13px;color:#fbbf24;">🛡 Protected — ' + fmt(left) + " left</div>";
+      else {
+        var c = challengeCheck(kind, sel);
+        if (c.ok) h += '<button id="request-1v1" class="btn-main" data-board="' + kind + '" data-target="' + esc(sel.id) + '">Request 1v1</button>';
+        else h += '<div style="font-size:13px;color:#a7f3d0;">' + esc(c.msg) + "</div>";
+      }
+      h += "</div>";
+    }
+    var pend = state.challenges || [];
+    if (pend.length) {
+      h += '<div class="card stack" style="margin-top:12px;"><div class="admin-title">PENDING 1v1</div>';
+      pend.forEach(function (c) {
+        h += '<div style="font-size:13px;color:#fff;">' + esc(c.fromName) + " ⚔ " + esc(c.targetName) + ' <span style="color:#6ee7b7;font-size:11px;">(' + esc(c.board) + ")</span></div>";
+        if (state.isAdmin) h += '<div class="row-btns"><button data-resolve="' + esc(c.id) + '|challenger">Challenger won</button><button data-resolve="' + esc(c.id) + '|defender">Defender won</button><button data-resolve="' + esc(c.id) + '|cancel" style="background:#f87171;">Cancel</button></div>';
+      });
+      h += "</div>";
+    }
+    return h;
+  }
+  function postApi(path, body, okMsg) {
+    firebase.auth().currentUser.getIdToken().then(function (t) {
+      return fetch(BACKEND_URL + path, { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + t }, body: JSON.stringify(body) });
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      flash(j.ok ? okMsg : (j.error || "Failed"));
+      if (j.ok) { state.selected = null; render(); }
+    }).catch(function () { flash("Could not reach the backend"); });
+  }
+
   function serverCardHTML() {
     var u = state.user, h = "", ids = u.guildIds || [];
-    if (ids.length > 1) {
+    if (u.uid === OWNER_UID) {
+      h += '<div style="margin:12px 20px 0;"><select id="switch-guild"><option value="">Main hub (ZEN)</option>';
+      allServers.forEach(function (g) { h += '<option value="' + esc(g.id) + '"' + (g.id === u.guildId ? " selected" : "") + ">" + esc(g.name) + "</option>"; });
+      h += "</select></div>";
+    } else if (ids.length > 1) {
       h += '<div style="margin:12px 20px 0;"><select id="switch-guild">';
       ids.forEach(function (id) { h += '<option value="' + esc(id) + '"' + (id === u.guildId ? " selected" : "") + ">" + esc((u.guildNames || {})[id] || id) + "</option>"; });
       h += "</select></div>";
@@ -256,10 +326,12 @@
     return h;
   }
 
-   function mainHTML() {
+  function mainHTML() {
     var locked = !state.user.displayName;
     var h = '<div class="top-bar"><span class="en">' + esc(state.user.displayName || state.user.discord) + '</span><span style="display:flex;gap:10px;align-items:center;">';
     if (state.isAdmin) h += '<button id="mod-toggle" class="logout-btn" style="color:#34d399;">Moderation</button>';
+    if (state.user.guildId && state.isOwner) h += '<span style="color:#fbbf24;font-size:12px;">Server Owner 👑</span>';
+    else if (state.user.guildId && state.isAdmin) h += '<span style="color:#a7f3d0;font-size:12px;">Admin</span>';
     h += state.user.robloxVerified ? '<span style="color:#34d399;font-size:12px;">Roblox ✓</span>' : '<button id="link-roblox" class="logout-btn" style="color:#34d399;">Link Roblox</button>';
     h += '<button id="logout-btn" class="logout-btn">Log out</button></span></div>';
 
@@ -312,7 +384,7 @@
     }
     h += '<div class="tabs"><button class="tab-btn ' + (state.tab === "kills" ? "active" : "") + '" data-tab="kills">Top Kills</button>';
     h += '<button class="tab-btn ' + (state.tab === "clan" ? "active" : "") + '" data-tab="clan">Clan Leaderboard</button></div>';
-    h += listHTML(state.tab);
+    h += listHTML(state.tab) + challengePanelHTML();
 
     if (state.isAdmin) {
       h += '<div style="margin-top:16px;">';
@@ -330,13 +402,30 @@
     return h + "</div></div>";
   }
 
-  function saveSite(patch, msg) {
+   function saveSite(patch, msg) {
     siteRef().set(patch, { merge: true })
       .then(function () { flash(msg || "Saved ✓"); }).catch(function (err) { flash(err.message); });
   }
   function on(id, fn) { var el = document.getElementById(id); if (el) el.addEventListener("click", fn); }
 
   function bindMain() {
+    document.querySelectorAll("[data-pick]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var p = b.getAttribute("data-pick").split(":");
+        state.selected = { kind: p[0], id: p.slice(1).join(":") };
+        render();
+      });
+    });
+    var r1 = document.getElementById("request-1v1");
+    if (r1) r1.addEventListener("click", function () {
+      postApi("/challenge", { board: r1.getAttribute("data-board"), targetId: r1.getAttribute("data-target") }, "1v1 requested ✓");
+    });
+    document.querySelectorAll("[data-resolve]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var p = b.getAttribute("data-resolve").split("|");
+        postApi("/challenge/resolve", { challengeId: p[0], result: p[1] }, "Done ✓");
+      });
+    });
     var sg = document.getElementById("switch-guild");
     if (sg) sg.addEventListener("change", function () {
       db.collection("users").doc(state.user.uid).set({ guildId: sg.value }, { merge: true }).catch(function (err) { flash(err.message); });
@@ -439,14 +528,23 @@
   function siteName() { return (state.user && state.user.guildId && state.site.name) ? String(state.site.name).slice(0, 18).toUpperCase() : "ZEN"; }
   function siteRef() { return (state.user && state.user.guildId) ? db.collection("servers").doc(state.user.guildId) : db.collection("site").doc("data"); }
   function watchSite() {
-    var key = (state.user && state.user.guildId) ? "s:" + state.user.guildId : "hub";
+    var key = state.user ? (state.user.guildId ? "s:" + state.user.guildId : "hub-u") : "hub";
     if (key === siteKey) return;
     siteKey = key;
     if (unsubSite) unsubSite();
     state.site = { clanLeader: "ZenHQ", kills: [], clan: [], admins: [], commands: [], guildId: "", name: "" };
+    if (unsubCh) { unsubCh(); unsubCh = null; }
+    state.challenges = [];
+    if (state.user) {
+      unsubCh = db.collection("challenges").where("scope", "==", state.user.guildId || "hub").where("status", "==", "pending").onSnapshot(function (snap) {
+        var l = [];
+        snap.forEach(function (x) { var c = x.data(); c.id = x.id; l.push(c); });
+        state.challenges = l; render();
+      }, function () {});
+    }
     unsubSite = siteRef().onSnapshot(function (doc) {
       var d = doc.data();
-      if (d) state.site = { clanLeader: d.clanLeader || "ZenHQ", kills: d.kills || [], clan: d.clan || [], admins: d.admins || [], commands: d.commands || [], guildId: d.guildId || "", name: d.name || "" };
+      if (d) state.site = { clanLeader: d.clanLeader || "ZenHQ", kills: d.kills || [], clan: d.clan || [], admins: d.admins || [], commands: d.commands || [], guildId: d.guildId || "", name: d.name || "", protections: d.protections || {} };
       updateAdmin(); render();
     }, function (err) { flash(err.message); });
   }
@@ -461,7 +559,18 @@
     bindMain();
   }
 
+  function syncAllServers() {
+    var isHub = !!state.user && state.user.uid === OWNER_UID;
+    if (isHub && !unsubAll) {
+      unsubAll = db.collection("servers").onSnapshot(function (snap) {
+        var l = [];
+        snap.forEach(function (x) { l.push({ id: x.id, name: (x.data() || {}).name || x.id }); });
+        allServers = l; render();
+      }, function () { unsubAll = null; });
+    } else if (!isHub && unsubAll) { unsubAll(); unsubAll = null; allServers = []; }
+  }
   function syncMembers() {
+    syncAllServers();
     if (state.isAdmin && state.user && !state.user.guildId && !unsubMembers) {
       unsubMembers = db.collection("users").onSnapshot(function (snap) {
         var list = []; snap.forEach(function (d) { list.push(d.data()); });
@@ -473,8 +582,8 @@
   }
   function updateAdmin() {
     if (!state.user) { state.isOwner = false; state.isAdmin = false; syncMembers(); return; }
-    state.isOwner = state.user.uid === OWNER_UID || state.user.email === OWNER_EMAIL || (!!state.user.guildId && state.user.manageGuilds.indexOf(state.user.guildId) !== -1);
-    state.isAdmin = state.isOwner || (state.site.admins || []).indexOf(state.user.uid) !== -1;
+    state.isOwner = state.user.uid === OWNER_UID || state.user.email === OWNER_EMAIL || (!!state.user.guildId && state.user.ownerGuilds.indexOf(state.user.guildId) !== -1);
+    state.isAdmin = state.isOwner || (!!state.user.guildId && state.user.manageGuilds.indexOf(state.user.guildId) !== -1) || (state.site.admins || []).indexOf(state.user.uid) !== -1;
     syncMembers();
   }
 
@@ -494,7 +603,7 @@
       if (!fbUser) { state.user = null; watchSite(); updateAdmin(); state.booting = false; render(); return; }
       unsubUser = db.collection("users").doc(fbUser.uid).onSnapshot(function (doc) {
         var d = doc.data() || {};
-        state.user = { uid: fbUser.uid, email: fbUser.email, roblox: d.roblox || "", discord: d.discord || "", displayName: d.displayName || "", robloxVerified: !!d.robloxVerified, discordVerified: !!d.discordVerified, guildId: d.guildId || "", guildIds: d.guildIds || [], guildNames: d.guildNames || {}, manageGuilds: d.manageGuilds || [], manageList: d.manageList || [] };
+        state.user = { uid: fbUser.uid, email: fbUser.email, roblox: d.roblox || "", discord: d.discord || "", displayName: d.displayName || "", robloxVerified: !!d.robloxVerified, discordVerified: !!d.discordVerified, guildId: d.guildId || "", guildIds: d.guildIds || [], guildNames: d.guildNames || {}, ownerGuilds: d.ownerGuilds || [], manageGuilds: d.manageGuilds || [], manageList: d.manageList || [] };
         watchSite(); updateAdmin(); state.booting = false;
         if (!unsubProfiles) unsubProfiles = db.collection("profiles").onSnapshot(function (snap) {
           var m = {};
