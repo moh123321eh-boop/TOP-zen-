@@ -131,6 +131,7 @@
   var configReady = firebaseConfig.apiKey.indexOf("PASTE_") === -1;
   var root = document.getElementById("root");
   var db = null, unsubUser = null, unsubMembers = null, toastTimer = null;
+  var unsubSite = null, siteKey = "", unsubProfiles = null, AVATARS = {};
 
   var state = {
     booting: true, user: null, isAdmin: false, isOwner: false,
@@ -163,6 +164,8 @@
   }
   function avatarHTML(name, size) {
     size = size || 44;
+    var av = AVATARS[String(name || "").trim().toLowerCase()];
+    if (av) return '<img class="avatar" src="' + esc(av) + '" width="' + size + '" height="' + size + '" style="object-fit:cover;box-shadow:0 0 0 2px rgba(16,185,129,0.35);" alt=""/>';
     var letter = esc((name || "?").trim().charAt(0).toUpperCase() || "?");
     var hue = hashHue(name);
     var style = "width:" + size + "px;height:" + size + "px;font-size:" + Math.round(size * 0.42) +
@@ -189,7 +192,7 @@
   function authHTML() {
     return '<div class="login-page"><div class="card login-box"><div class="center"><div class="eyebrow en">TOPZEN CLAN COMMUNITY</div>' +
       '<h1>Welcome to <span class="glow en">TopZen</span></h1>' +
-      '<p class="sub">Sign in with Discord, then link your Roblox account to verify it. No password needed.</p></div>' +
+      '<p class="sub">Sign in with Discord. No password needed. You can link Roblox later from the top corner.</p></div>' +
       '<button id="discord-login" class="btn-main" style="margin-top:22px;background:linear-gradient(90deg,#4752c4,#5865f2);box-shadow:0 8px 24px rgba(88,101,242,0.35);">Sign in with Discord</button></div></div>';
   }
 
@@ -218,10 +221,28 @@
     return h + "</div>";
   }
 
+  function serverCardHTML() {
+    var u = state.user, h = "", ids = u.guildIds || [];
+    if (ids.length > 1) {
+      h += '<div style="margin:12px 20px 0;"><select id="switch-guild">';
+      ids.forEach(function (id) { h += '<option value="' + esc(id) + '"' + (id === u.guildId ? " selected" : "") + ">" + esc((u.guildNames || {})[id] || id) + "</option>"; });
+      h += "</select></div>";
+    }
+    var free = (u.manageList || []).filter(function (g) { return ids.indexOf(g.id) === -1; });
+    if (free.length) {
+      h += '<div class="card" style="margin:14px 20px;"><div class="admin-title" style="margin-bottom:8px;">ADD YOUR SERVER</div>';
+      h += '<div style="font-size:12px;color:#a7f3d0;margin-bottom:8px;line-height:1.7;">You manage these Discord servers. Invite the bot, then register the server to get its own leaderboards.</div>';
+      h += '<div class="stack"><select id="reg-guild">';
+      free.forEach(function (g) { h += '<option value="' + esc(g.id) + '">' + esc(g.name) + "</option>"; });
+      h += '</select><button id="invite-bot" class="btn-secondary">1. Invite the bot</button><button id="register-guild" class="btn-main">2. Register server</button></div></div>';
+    }
+    return h;
+  }
+
   function botPanelHTML() {
     var h = '<div class="admin-title" style="margin-bottom:8px;">DISCORD BOT</div>';
-    h += '<div style="font-size:12px;color:#a7f3d0;margin-bottom:8px;line-height:1.7;">Server ID: Discord → Settings → Advanced → Developer Mode, then right-click your server → Copy Server ID. Commands only go live once DISCORD_BOT_TOKEN is set on the backend.</div>';
-    h += '<div class="row-btns"><input id="guild-id" placeholder="Server ID" value="' + esc(state.site.guildId) + '"/><button id="save-guild">Link</button></div>';
+    if (!state.user.guildId) h += '<div style="font-size:12px;color:#a7f3d0;margin-bottom:8px;line-height:1.7;">Server ID: Discord → Settings → Advanced → Developer Mode, then right-click your server → Copy Server ID. Commands only go live once DISCORD_BOT_TOKEN is set on the backend.</div>';
+    if (!state.user.guildId) h += '<div class="row-btns"><input id="guild-id" placeholder="Server ID" value="' + esc(state.site.guildId) + '"/><button id="save-guild">Link</button></div>';
     h += '<div class="admin-title" style="margin:14px 0 8px;">SLASH COMMANDS</div><div class="stack">';
     (state.site.commands || []).forEach(function (c) {
       h += '<div class="row-btns"><input value="/' + esc(c.name) + ' · ' + esc(c.type) + '" disabled style="opacity:0.7;"/><button data-rm-cmd="' + esc(c.name) + '" style="background:#f87171;">Delete</button></div>';
@@ -236,11 +257,13 @@
   }
 
    function mainHTML() {
-    var locked = !state.user.displayName || !state.user.robloxVerified;
+    var locked = !state.user.displayName;
     var h = '<div class="top-bar"><span class="en">' + esc(state.user.displayName || state.user.discord) + '</span><span style="display:flex;gap:10px;align-items:center;">';
     if (state.isAdmin) h += '<button id="mod-toggle" class="logout-btn" style="color:#34d399;">Moderation</button>';
+    h += state.user.robloxVerified ? '<span style="color:#34d399;font-size:12px;">Roblox ✓</span>' : '<button id="link-roblox" class="logout-btn" style="color:#34d399;">Link Roblox</button>';
     h += '<button id="logout-btn" class="logout-btn">Log out</button></span></div>';
 
+    h += serverCardHTML();
     if (state.isAdmin && state.showMod) {
       h += '<div class="card" style="margin:14px 20px;"><div class="admin-title" style="margin-bottom:10px;">Moderation panel</div>';
       if (state.isOwner) {
@@ -255,31 +278,28 @@
           });
           h += "</div>";
         } else h += '<div style="font-size:12px;color:#a7f3d0;margin-top:8px;">No moderators added yet (besides the owner)</div>';
-      } else h += '<div style="font-size:13px;color:#a7f3d0;">You are a moderator â€” you can edit the leaderboards below.</div>';
+      } else h += '<div style="font-size:13px;color:#a7f3d0;">You are a moderator — you can edit the leaderboards below.</div>';
       h += "</div>";
     }
 
-    if (state.isAdmin) {
-      h += '<button id="members-toggle" class="members-toggle">Members ðŸ‘¥</button>';
+    if (state.isAdmin && !state.user.guildId) {
+      h += '<button id="members-toggle" class="members-toggle">Members 👥</button>';
       h += '<div id="members-overlay" class="members-overlay ' + (state.showMembers ? "open" : "") + '"></div>';
-      h += '<div class="members-panel ' + (state.showMembers ? "open" : "") + '"><div class="members-head"><h2>Site members (' + state.members.length + ')</h2><button id="members-close" class="members-close">âœ•</button></div>';
+      h += '<div class="members-panel ' + (state.showMembers ? "open" : "") + '"><div class="members-head"><h2>Site members (' + state.members.length + ')</h2><button id="members-close" class="members-close">✕</button></div>';
       if (!state.members.length) h += '<div class="member-empty">No registered members yet</div>';
       else state.members.forEach(function (m) {
         h += '<div class="member-row"><div class="member-name">' + avatarHTML(m.displayName || m.email, 28) + esc(m.displayName || "No name yet") + "</div>";
-        h += '<div class="member-meta">Roblox: <b>' + esc(m.roblox || "â€”") + (m.robloxVerified ? " âœ“" : "") + "</b><br/>Discord: <b>" + esc(m.discord || "â€”") + (m.discordVerified ? " âœ“" : "") + "</b><br/>" + esc(m.email || "") + "</div></div>";
+        h += '<div class="member-meta">Roblox: <b>' + esc(m.roblox || "—") + (m.robloxVerified ? " ✓" : "") + "</b><br/>Discord: <b>" + esc(m.discord || "—") + (m.discordVerified ? " ✓" : "") + "</b><br/>" + esc(m.email || "") + "</div></div>";
       });
       h += "</div>";
-      h += '<div class="uid-box"><b>You are the site owner âœ“</b><br/>UID: ' + esc(state.user.uid) + "</div>";
+      h += '<div class="uid-box"><b>You are the site owner ✓</b><br/>UID: ' + esc(state.user.uid) + "</div>";
     }
 
     h += '<div class="wrap"><div class="center" style="padding-top:8px;padding-bottom:18px;">';
-    h += '<div class="eyebrow en">TOPZEN CLAN COMMUNITY <span class="dot"></span></div><h1>TOP <span class="glow en">ZEN</span></h1>';
+    h += '<div class="eyebrow en">TOPZEN CLAN COMMUNITY <span class="dot"></span></div><h1>TOP <span class="glow en">' + esc(siteName()) + '</span></h1>';
     h += '<p class="sub">Follow the best players, kills, and the overall clan ranking</p></div>';
 
-    if (!state.user.robloxVerified) {
-      h += '<div class="card gate"><p>Link your Roblox account to verify it and unlock the site. You approve on Roblox â€” we never see your password.</p>';
-      h += '<button id="link-roblox" class="btn-main">Link Roblox account</button></div>';
-    } else if (locked) {
+    if (locked) {
       h += '<div class="card gate"><p>One last step before you can use the site:</p>';
       h += '<form id="name-form" class="gate-form"><input id="in-name" placeholder="Your name" autocomplete="off"/><button type="submit">Save</button></form></div>';
     }
@@ -311,12 +331,24 @@
   }
 
   function saveSite(patch, msg) {
-    db.collection("site").doc("data").set(patch, { merge: true })
-      .then(function () { flash(msg || "Saved âœ“"); }).catch(function (err) { flash(err.message); });
+    siteRef().set(patch, { merge: true })
+      .then(function () { flash(msg || "Saved ✓"); }).catch(function (err) { flash(err.message); });
   }
   function on(id, fn) { var el = document.getElementById(id); if (el) el.addEventListener("click", fn); }
 
   function bindMain() {
+    var sg = document.getElementById("switch-guild");
+    if (sg) sg.addEventListener("change", function () {
+      db.collection("users").doc(state.user.uid).set({ guildId: sg.value }, { merge: true }).catch(function (err) { flash(err.message); });
+    });
+    on("invite-bot", function () { window.open(BACKEND_URL + "/invite", "_blank"); });
+    on("register-guild", function () {
+      var gid = document.getElementById("reg-guild").value;
+      firebase.auth().currentUser.getIdToken().then(function (t) {
+        return fetch(BACKEND_URL + "/register", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + t }, body: JSON.stringify({ guildId: gid }) });
+      }).then(function (r) { return r.json(); }).then(function (j) { flash(j.ok ? "Server registered ✓" : (j.error || "Failed")); })
+        .catch(function () { flash("Could not reach the backend"); });
+    });
     on("logout-btn", function () { firebase.auth().signOut(); });
     on("link-roblox", function () {
       firebase.auth().currentUser.getIdToken().then(function (t) {
@@ -327,12 +359,12 @@
     on("add-mod", function () {
       var uid = document.getElementById("new-mod-uid").value.trim();
       if (!uid) { flash("Enter the member's UID"); return; }
-      saveSite({ admins: (state.site.admins || []).concat([uid]) }, "Moderator added âœ“");
+      saveSite({ admins: (state.site.admins || []).concat([uid]) }, "Moderator added ✓");
     });
     document.querySelectorAll("[data-rm-mod]").forEach(function (b) {
       b.addEventListener("click", function () {
         var uid = b.getAttribute("data-rm-mod");
-        saveSite({ admins: (state.site.admins || []).filter(function (a) { return a !== uid; }) }, "Moderator removed âœ“");
+        saveSite({ admins: (state.site.admins || []).filter(function (a) { return a !== uid; }) }, "Moderator removed ✓");
       });
     });
     on("members-toggle", function () { state.showMembers = true; render(); });
@@ -345,7 +377,7 @@
       var v = document.getElementById("in-name").value.trim();
       if (!v) { flash("Enter your name first"); return; }
       db.collection("users").doc(state.user.uid).set({ displayName: v.slice(0, 18) }, { merge: true })
-        .then(function () { flash("Name saved âœ“"); }).catch(function (err) { flash("Error: " + err.message); });
+        .then(function () { flash("Name saved ✓"); }).catch(function (err) { flash("Error: " + err.message); });
     });
 
     document.querySelectorAll(".tab-btn").forEach(function (b) {
@@ -362,12 +394,12 @@
     on("save-guild", function () {
       var v = document.getElementById("guild-id").value.trim();
       if (v && !/^\d{15,25}$/.test(v)) { flash("Server ID must be numbers only"); return; }
-      saveSite({ guildId: v }, "Server linked âœ“");
+      saveSite({ guildId: v }, "Server linked ✓");
     });
     document.querySelectorAll("[data-rm-cmd]").forEach(function (b) {
       b.addEventListener("click", function () {
         var n = b.getAttribute("data-rm-cmd");
-        saveSite({ commands: (state.site.commands || []).filter(function (c) { return c.name !== n; }) }, "Command deleted âœ“");
+        saveSite({ commands: (state.site.commands || []).filter(function (c) { return c.name !== n; }) }, "Command deleted ✓");
       });
     });
     on("add-cmd", function () {
@@ -381,7 +413,7 @@
       var list = state.site.commands || [];
       if (list.some(function (c) { return c.name === n; })) { flash("That command already exists"); return; }
       if (list.length >= 25) { flash("Max 25 commands"); return; }
-      saveSite({ commands: list.concat([{ name: n, description: d, type: t, reply: t === "text" ? r : "" }]) }, "Command added âœ“");
+      saveSite({ commands: list.concat([{ name: n, description: d, type: t, reply: t === "text" ? r : "" }]) }, "Command added ✓");
     });
     on("save-leader", function () {
       saveSite({ clanLeader: document.getElementById("leader-input").value.trim() || "ZenHQ" });
@@ -404,7 +436,23 @@
     });
   }
 
+  function siteName() { return (state.user && state.user.guildId && state.site.name) ? String(state.site.name).slice(0, 18).toUpperCase() : "ZEN"; }
+  function siteRef() { return (state.user && state.user.guildId) ? db.collection("servers").doc(state.user.guildId) : db.collection("site").doc("data"); }
+  function watchSite() {
+    var key = (state.user && state.user.guildId) ? "s:" + state.user.guildId : "hub";
+    if (key === siteKey) return;
+    siteKey = key;
+    if (unsubSite) unsubSite();
+    state.site = { clanLeader: "ZenHQ", kills: [], clan: [], admins: [], commands: [], guildId: "", name: "" };
+    unsubSite = siteRef().onSnapshot(function (doc) {
+      var d = doc.data();
+      if (d) state.site = { clanLeader: d.clanLeader || "ZenHQ", kills: d.kills || [], clan: d.clan || [], admins: d.admins || [], commands: d.commands || [], guildId: d.guildId || "", name: d.name || "" };
+      updateAdmin(); render();
+    }, function (err) { flash(err.message); });
+  }
+
   function render() {
+    document.title = "TOP " + siteName() + " | TopZen";
     showToast();
     if (!configReady) { root.innerHTML = configMissingHTML(); return; }
     if (state.booting) { root.innerHTML = '<div class="login-page"><div class="sub en">LOADING...</div></div>'; return; }
@@ -414,18 +462,18 @@
   }
 
   function syncMembers() {
-    if (state.isAdmin && !unsubMembers) {
+    if (state.isAdmin && state.user && !state.user.guildId && !unsubMembers) {
       unsubMembers = db.collection("users").onSnapshot(function (snap) {
         var list = []; snap.forEach(function (d) { list.push(d.data()); });
         state.members = list; render();
       }, function () { unsubMembers = null; });
-    } else if (!state.isAdmin && unsubMembers) {
+    } else if (!(state.isAdmin && state.user && !state.user.guildId) && unsubMembers) {
       unsubMembers(); unsubMembers = null; state.members = [];
     }
   }
   function updateAdmin() {
     if (!state.user) { state.isOwner = false; state.isAdmin = false; syncMembers(); return; }
-    state.isOwner = state.user.uid === OWNER_UID || state.user.email === OWNER_EMAIL;
+    state.isOwner = state.user.uid === OWNER_UID || state.user.email === OWNER_EMAIL || (!!state.user.guildId && state.user.manageGuilds.indexOf(state.user.guildId) !== -1);
     state.isAdmin = state.isOwner || (state.site.admins || []).indexOf(state.user.uid) !== -1;
     syncMembers();
   }
@@ -438,24 +486,26 @@
     var qp = new URLSearchParams(window.location.search);
     if (hp.get("token")) firebase.auth().signInWithCustomToken(hp.get("token")).catch(function (err) { flash(err.message); });
     if (qp.get("error")) flash(qp.get("error"));
-    if (qp.get("linked")) flash("Roblox account linked âœ“");
+    if (qp.get("linked")) flash("Roblox account linked ✓");
     if (hp.get("token") || qp.get("error") || qp.get("linked")) history.replaceState(null, "", window.location.pathname);
 
     firebase.auth().onAuthStateChanged(function (fbUser) {
       if (unsubUser) { unsubUser(); unsubUser = null; }
-      if (!fbUser) { state.user = null; updateAdmin(); state.booting = false; render(); return; }
+      if (!fbUser) { state.user = null; watchSite(); updateAdmin(); state.booting = false; render(); return; }
       unsubUser = db.collection("users").doc(fbUser.uid).onSnapshot(function (doc) {
         var d = doc.data() || {};
-        state.user = { uid: fbUser.uid, email: fbUser.email, roblox: d.roblox || "", discord: d.discord || "", displayName: d.displayName || "", robloxVerified: !!d.robloxVerified, discordVerified: !!d.discordVerified };
-        updateAdmin(); state.booting = false; render();
+        state.user = { uid: fbUser.uid, email: fbUser.email, roblox: d.roblox || "", discord: d.discord || "", displayName: d.displayName || "", robloxVerified: !!d.robloxVerified, discordVerified: !!d.discordVerified, guildId: d.guildId || "", guildIds: d.guildIds || [], guildNames: d.guildNames || {}, manageGuilds: d.manageGuilds || [], manageList: d.manageList || [] };
+        watchSite(); updateAdmin(); state.booting = false;
+        if (!unsubProfiles) unsubProfiles = db.collection("profiles").onSnapshot(function (snap) {
+          var m = {};
+          snap.forEach(function (x) { var q = x.data(); [q.r, q.d, q.n].forEach(function (k) { if (k && q.a) m[k] = q.a; }); });
+          AVATARS = m; render();
+        }, function () { unsubProfiles = null; });
+        render();
       }, function (err) { state.booting = false; flash(err.message); render(); });
     });
 
-    db.collection("site").doc("data").onSnapshot(function (doc) {
-      var d = doc.data();
-      if (d) state.site = { clanLeader: d.clanLeader || "ZenHQ", kills: d.kills || [], clan: d.clan || [], admins: d.admins || [], commands: d.commands || [], guildId: d.guildId || "" };
-      updateAdmin(); render();
-    }, function (err) { flash(err.message); });
+    watchSite();
   } else {
     state.booting = false; render();
   }
@@ -464,7 +514,7 @@
 
 <!--
 ================================================================
-Ù‚ÙˆØ§Ø¹Ø¯ Firestore Ø§Ù„Ø¬Ø¯ÙŠØ¯Ø© (Firebase Console â†’ Firestore Database â†’ Rules â†’ Ø§Ù…Ø³Ø­ ÙƒÙ„ Ø´ÙŠ ÙˆØ§Ù„ØµÙ‚ Ù‡Ø°ÙŠ â†’ Publish):
+قواعد Firestore الجديدة (Firebase Console → Firestore Database → Rules → امسح كل شي والصق هذي → Publish):
 
 rules_version = '2';
 service cloud.firestore {
@@ -485,7 +535,7 @@ service cloud.firestore {
 
     match /users/{uid} {
       allow read: if request.auth != null && (request.auth.uid == uid || isOwner() || isMod());
-      // Ø§Ù„Ø­Ø³Ø§Ø¨ ÙŠÙ†Ø´Ø¦Ù‡ Ø§Ù„Ø³ÙŠØ±ÙØ± ÙÙ‚Ø· (Admin SDK)ØŒ ÙØ§Ù„Ø¹Ø¶Ùˆ Ù…Ø§ ÙŠÙ‚Ø¯Ø± ÙŠØ²ÙˆÙ‘Ø± Ø§Ù„ØªÙˆØ«ÙŠÙ‚
+      // الحساب ينشئه السيرفر فقط (Admin SDK)، فالعضو ما يقدر يزوّر التوثيق
       allow create: if false;
       allow update: if request.auth != null && request.auth.uid == uid &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(["displayName"]);
