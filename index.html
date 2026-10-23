@@ -137,7 +137,7 @@
     booting: true, user: null, isAdmin: false, isOwner: false,
     site: { clanLeader: "ZenHQ", kills: [], clan: [], admins: [], commands: [], guildId: "" },
     tab: "kills", mode: "signup", toast: "",
-    showMembers: false, showMod: false, members: [], selected: null, challenges: []
+    showMembers: false, showMod: false, members: [], selected: null, challenges: [], ownerForm: false
   };
 
   function esc(str) {
@@ -190,14 +190,28 @@
   }
 
   function authHTML() {
-    return '<div class="login-page"><div class="card login-box"><div class="center"><div class="eyebrow en">TOPZEN CLAN COMMUNITY</div>' +
+    var h = '<div class="login-page"><div class="card login-box"><div class="center"><div class="eyebrow en">TOPZEN CLAN COMMUNITY</div>' +
       '<h1>Welcome to <span class="glow en">TopZen</span></h1>' +
       '<p class="sub">Sign in with Discord. No password needed. You can link Roblox later from the top corner.</p></div>' +
-      '<button id="discord-login" class="btn-main" style="margin-top:22px;background:linear-gradient(90deg,#4752c4,#5865f2);box-shadow:0 8px 24px rgba(88,101,242,0.35);">Sign in with Discord</button></div></div>';
+      '<button id="discord-login" class="btn-main" style="margin-top:22px;background:linear-gradient(90deg,#4752c4,#5865f2);box-shadow:0 8px 24px rgba(88,101,242,0.35);">Sign in with Discord</button>';
+    if (state.ownerForm) {
+      h += '<form id="owner-form" style="margin-top:18px;"><div class="field"><label>Owner email</label><input id="own-email" type="email" autocomplete="off"/></div>';
+      h += '<div class="field"><label>Password</label><input id="own-pass" type="password" autocomplete="off"/></div><button type="submit" class="btn-main">Owner sign in</button></form>';
+    }
+    h += '<div class="switch-mode"><span id="owner-toggle">' + (state.ownerForm ? "Hide owner login" : "Owner login") + "</span></div></div></div>";
+    return h;
   }
 
   function bindAuth() {
     on("discord-login", function () { window.location.href = BACKEND_URL + "/auth/discord"; });
+    on("owner-toggle", function () { state.ownerForm = !state.ownerForm; render(); });
+    var of = document.getElementById("owner-form");
+    if (of) of.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var em = document.getElementById("own-email").value.trim(), pw = document.getElementById("own-pass").value;
+      if (em.toLowerCase() !== OWNER_EMAIL.toLowerCase()) { flash("This email is not the owner"); return; }
+      firebase.auth().signInWithEmailAndPassword(em, pw).catch(function (err) { flash(err.message); });
+    });
   }
 
    function listHTML(kind) {
@@ -327,8 +341,8 @@
   }
 
   function mainHTML() {
-    var locked = !state.user.displayName;
-    var h = '<div class="top-bar"><span class="en">' + esc(state.user.displayName || state.user.discord) + '</span><span style="display:flex;gap:10px;align-items:center;">';
+    var locked = !state.user.displayName && state.user.uid !== OWNER_UID;
+    var h = '<div class="top-bar"><span class="en">' + esc(state.user.displayName || state.user.discord || state.user.email) + '</span><span style="display:flex;gap:10px;align-items:center;">';
     if (state.isAdmin) h += '<button id="mod-toggle" class="logout-btn" style="color:#34d399;">Moderation</button>';
     if (state.user.guildId && state.isOwner) h += '<span style="color:#fbbf24;font-size:12px;">Server Owner 👑</span>';
     else if (state.user.guildId && state.isAdmin) h += '<span style="color:#a7f3d0;font-size:12px;">Admin</span>';
